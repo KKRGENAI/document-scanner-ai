@@ -2,13 +2,6 @@
 #  KKR Gen AI Innovations — Document Scanner AI
 #  Image Enhancement Module
 #
-#  This module handles:
-#    - Grayscale conversion
-#    - Adaptive thresholding  → clean black-and-white scan look
-#    - Sharpening, brightness, and contrast adjustments
-#    - Shadow/background removal
-#    - Noise reduction (denoising)
-#
 #  Website : https://kkrgenaiinnovations.com/
 #  Email   : info@kkrgenaiinnovations.com
 #  WhatsApp: +1 470-861-6312
@@ -20,15 +13,15 @@ import numpy as np
 
 class ImageEnhancer:
     """
-    Post-processing pipeline that turns a warped document image into a
-    clean, high-contrast scanner-like output.
+    Post-processing pipeline → clean, high-contrast scanner-like output.
 
-    Each method can be used independently, or call `full_enhance()`
-    for the recommended defaults.
+    full_enhance() auto-detects whether the image is a real photo
+    (taken with a camera) or a digital document (screenshot, PDF export)
+    and applies the right processing for each case.
     """
 
     # ------------------------------------------------------------------
-    # Full pipeline (recommended)
+    # Full pipeline
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -40,40 +33,35 @@ class ImageEnhancer:
         remove_shadow: bool = True,
     ) -> np.ndarray:
         """
-        Apply the complete enhancement pipeline.
+        Full enhancement pipeline.
 
         Parameters
         ----------
-        image         : warped BGR image from DocumentProcessor
-        mode          : "adaptive" (default) | "otsu" | "color" | "grayscale"
-                        -------------------------------------------------------
-                        adaptive  → best for uneven lighting (camera photos)
-                        otsu      → clean scans with uniform background
-                        color     → keep colors, only sharpen/contrast-boost
-                        grayscale → simple grayscale, no thresholding
-        sharpen       : apply unsharp masking to make text crisper
-        denoise       : remove salt-and-pepper / camera noise first
-        remove_shadow : attempt to flatten uneven illumination
+        image         : warped BGR (or grayscale) image
+        mode          : "adaptive" | "otsu" | "color" | "grayscale"
+        sharpen       : apply gentle unsharp mask
+        denoise       : remove noise before thresholding
+        remove_shadow : flatten uneven illumination (skip for digital images)
 
-        Returns
-        -------
-        np.ndarray – enhanced image (grayscale or BGR depending on mode)
+        Auto-behaviour
+        --------------
+        If the image is already high-contrast (a digital screenshot / PDF),
+        shadow-removal and heavy denoising are skipped automatically to
+        avoid degrading quality.
         """
-        img = image.copy()
+        img        = image.copy()
+        is_digital = ImageEnhancer._is_digital_image(img)
 
-        # 1. Optional shadow removal (works on BGR image)
-        if remove_shadow:
+        # Skip shadow removal and denoising for already-clean digital images
+        if remove_shadow and not is_digital:
             img = ImageEnhancer.remove_shadow(img)
 
-        # 2. Optional denoising
-        if denoise:
+        if denoise and not is_digital:
             img = ImageEnhancer.denoise(img)
 
-        # 3. Sharpening (before threshold for best results)
         if sharpen:
             img = ImageEnhancer.sharpen(img)
 
-        # 4. Thresholding / mode selection
         if mode == "adaptive":
             img = ImageEnhancer.adaptive_threshold(img)
         elif mode == "otsu":
@@ -83,33 +71,29 @@ class ImageEnhancer:
         elif mode == "grayscale":
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
         else:
-            raise ValueError(f"Unknown mode '{mode}'. Choose: adaptive | otsu | color | grayscale")
+            raise ValueError(
+                f"Unknown mode '{mode}'. Choose: adaptive | otsu | color | grayscale"
+            )
 
         return img
 
     # ------------------------------------------------------------------
-    # Individual enhancement steps
+    # Individual steps
     # ------------------------------------------------------------------
 
     @staticmethod
     def adaptive_threshold(image: np.ndarray) -> np.ndarray:
         """
-        Convert to grayscale then apply Adaptive Gaussian Thresholding.
+        Adaptive Gaussian Threshold — best for photos with uneven lighting.
 
-        WHY adaptive?
-        Normal (global) thresholding uses ONE brightness cutoff for the
-        whole image.  If part of the document is in shadow, global
-        thresholding will turn the dark area completely black.
+        Calculates a separate threshold per small region (blockSize × blockSize)
+        so shadows don't turn entire sections solid black.
 
-        Adaptive thresholding calculates a DIFFERENT threshold for small
-        regions of the image — so text in both bright and dark areas
-        comes out clean.
-
-        blockSize=11 → neighbourhood size (must be odd)
-        C=10         → constant subtracted from the mean (fine-tuning)
+        blockSize=21 : neighbourhood size (must be odd)
+        C=12         : constant subtracted from the local mean
         """
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image.copy()
-        result = cv2.adaptiveThreshold(
+        return cv2.adaptiveThreshold(
             gray,
             maxValue=255,
             adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -117,16 +101,14 @@ class ImageEnhancer:
             blockSize=21,
             C=12,
         )
-        return result
 
     @staticmethod
     def otsu_threshold(image: np.ndarray) -> np.ndarray:
         """
-        Grayscale + Otsu's automatic global threshold.
+        Otsu's automatic global threshold.
 
-        Otsu's algorithm finds the OPTIMAL global threshold by minimising
-        intra-class variance.  Works brilliantly for clean, evenly-lit
-        scans but may struggle with shadows.
+        Finds the single best threshold by minimising intra-class variance.
+        Works best for evenly-lit scans with clear text/background separation.
         """
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image.copy()
         _, result = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -135,14 +117,11 @@ class ImageEnhancer:
     @staticmethod
     def sharpen(image: np.ndarray) -> np.ndarray:
         """
-        Sharpen using a gentle Unsharp Mask (blend method).
+        Gentle Unsharp Mask.
 
-        We blur a copy and then blend:
-            sharpened = original * (1 + amount) − blurred * amount
-        This avoids the halo/outline artefacts that a raw convolution
-        kernel produces on already-sharp digital images or dark text.
-
-        amount=0.6 is noticeably crisper without over-sharpening.
+        Formula: sharpened = original*(1+a) − blur*a
+        amount=0.6 is crisp without the halo/outline artefact that a
+        raw convolution kernel produces on already-sharp digital text.
         """
         amount  = 0.6
         blurred = cv2.GaussianBlur(image, (0, 0), sigmaX=2)
@@ -151,43 +130,38 @@ class ImageEnhancer:
     @staticmethod
     def denoise(image: np.ndarray) -> np.ndarray:
         """
-        Remove noise using Non-Local Means Denoising.
+        Non-Local Means Denoising — removes camera grain while preserving edges.
+        Only applied to real photographs (digital images skip this automatically).
 
-        This is more powerful than simple Gaussian blur because it
-        preserves edges while smoothing out random noise.
-
-        h=10 → filter strength (higher = more smoothing, less detail)
+        h=7 : conservative filter strength to avoid over-smoothing text.
         """
         if image.ndim == 3:
-            return cv2.fastNlMeansDenoisingColored(image, None, h=10, hColor=10,
-                                                   templateWindowSize=7, searchWindowSize=21)
-        return cv2.fastNlMeansDenoising(image, None, h=10,
-                                        templateWindowSize=7, searchWindowSize=21)
+            return cv2.fastNlMeansDenoisingColored(
+                image, None, h=7, hColor=7,
+                templateWindowSize=7, searchWindowSize=21
+            )
+        return cv2.fastNlMeansDenoising(
+            image, None, h=7,
+            templateWindowSize=7, searchWindowSize=21
+        )
 
     @staticmethod
     def remove_shadow(image: np.ndarray) -> np.ndarray:
         """
-        Attempt to flatten uneven lighting / remove shadow.
+        Flatten uneven illumination / remove shadows (photos only).
 
-        Technique (channel-wise):
-          1. Split into channels.
-          2. Dilate each channel — this blurs text and keeps the
-             background illumination.
-          3. Divide the original channel by the background estimate.
-             Where background is bright, the result normalises to ~1.
-             Where background is dark (shadow), values get boosted.
-        This effectively "flattens" the illumination across the image.
+        Per channel:
+          1. Dilate → background brightness estimate
+          2. Divide original by background → normalised illumination
         """
-        channels = cv2.split(image) if image.ndim == 3 else [image]
+        channels       = cv2.split(image) if image.ndim == 3 else [image]
         result_channels = []
         for ch in channels:
-            bg = cv2.dilate(ch, np.ones((7, 7), np.uint8), iterations=4)
-            bg = cv2.GaussianBlur(bg, (21, 21), 0)
-            # Normalise: divide original by background, scale to [0,255]
+            bg   = cv2.dilate(ch, np.ones((7, 7), np.uint8), iterations=4)
+            bg   = cv2.GaussianBlur(bg, (21, 21), 0)
             diff = cv2.divide(ch.astype(np.float32), bg.astype(np.float32) + 1e-6)
             norm = cv2.normalize(diff, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             result_channels.append(norm)
-
         if image.ndim == 3:
             return cv2.merge(result_channels)
         return result_channels[0]
@@ -195,18 +169,14 @@ class ImageEnhancer:
     @staticmethod
     def enhance_color(image: np.ndarray) -> np.ndarray:
         """
-        Boost contrast and saturation while keeping the document in colour.
-
-        Uses CLAHE (Contrast Limited Adaptive Histogram Equalisation) on
-        the Luminance channel of the LAB colour space — so only brightness
-        is adjusted, not hue.
+        Boost contrast while keeping colours via CLAHE on the L channel (LAB space).
+        clipLimit=3.0 and tileGridSize=(8,8) work well for most documents.
         """
-        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        l_clahe = clahe.apply(l)
-        lab_merged = cv2.merge([l_clahe, a, b])
-        return cv2.cvtColor(lab_merged, cv2.COLOR_LAB2BGR)
+        lab              = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+        l, a, b          = cv2.split(lab)
+        clahe            = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        l_clahe          = clahe.apply(l)
+        return cv2.cvtColor(cv2.merge([l_clahe, a, b]), cv2.COLOR_LAB2BGR)
 
     @staticmethod
     def adjust_brightness_contrast(
@@ -214,19 +184,31 @@ class ImageEnhancer:
         brightness: int = 0,
         contrast: int = 0,
     ) -> np.ndarray:
-        """
-        Manual brightness and contrast adjustment.
-
-        Parameters
-        ----------
-        brightness : int in [-127, 127]  –  positive = brighter
-        contrast   : int in [-127, 127]  –  positive = more contrast
-        """
+        """Manual brightness/contrast. Values in [-127, 127]."""
         img = image.copy().astype(np.int16)
-        # Contrast: scale pixel values around 128
         if contrast != 0:
             factor = (259 * (contrast + 255)) / (255 * (259 - contrast))
-            img = factor * (img - 128) + 128
-        # Brightness: shift all pixel values
+            img    = factor * (img - 128) + 128
         img = img + brightness
         return np.clip(img, 0, 255).astype(np.uint8)
+
+    # ------------------------------------------------------------------
+    # Internal helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_digital_image(image: np.ndarray) -> bool:
+        """
+        Heuristic: decide if this image is a clean digital document
+        (screenshot, PDF render) rather than a real camera photograph.
+
+        A digital document typically has:
+          - Very high contrast  (std-dev of grayscale > 80)
+          - Many pure-white pixels (>30 % of area near 255)
+
+        If true → skip shadow removal and heavy denoising.
+        """
+        gray      = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+        std_dev   = float(np.std(gray))
+        white_pct = float(np.mean(gray > 230))
+        return std_dev > 60 or white_pct > 0.25

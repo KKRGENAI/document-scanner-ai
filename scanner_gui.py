@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 # =============================================================================
 #   KKR Gen AI Innovations — Document Scanner AI
-#   Tkinter Desktop GUI
-#
-#   A beginner-friendly graphical interface to scan documents
-#   without typing any commands.
+#   Tkinter Desktop GUI  (v2 — with OCR + Word export)
 #
 #   Website : https://kkrgenaiinnovations.com/
 #   Email   : info@kkrgenaiinnovations.com
@@ -19,11 +16,12 @@ Launch the desktop GUI:
 
 Features
 --------
-  • Browse and load an image
-  • Live preview of original and scanned result side-by-side
-  • Select enhancement mode from a dropdown
-  • Save as JPG or PDF with one click
-  • Status bar with progress messages
+  • Load any image via Browse or Drag-and-Drop
+  • Side-by-side preview: Original | Scanned
+  • Enhancement mode selector (adaptive / otsu / color / grayscale)
+  • Save as JPG, PDF, or Word (.docx)
+  • OCR: Extract selectable text from the scanned document
+  • Copy OCR text to clipboard with one click
 """
 
 import os
@@ -38,231 +36,225 @@ import numpy as np
 from utils.image_processor import DocumentProcessor
 from utils.enhancer import ImageEnhancer
 from utils.pdf_converter import PDFConverter
+from utils.word_converter import WordConverter
 
 
 # ===========================================================================
-#  Utility: convert OpenCV image → Tkinter PhotoImage
+#  Helper: OpenCV image → Tkinter PhotoImage
 # ===========================================================================
 
-def cv2_to_tk(image: np.ndarray, max_w: int = 520, max_h: int = 640):
-    """Resize and convert a numpy BGR/gray image for display in a Label."""
+def cv2_to_tk(image: np.ndarray, max_w: int = 500, max_h: int = 560):
     try:
         from PIL import Image, ImageTk
     except ImportError:
         raise ImportError("Pillow is needed for the GUI.\n  pip install Pillow")
-
     if image.ndim == 2:
-        pil_img = Image.fromarray(image, mode="L").convert("RGB")
+        pil = Image.fromarray(image, mode="L").convert("RGB")
     else:
-        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(rgb)
-
-    # Fit inside max_w × max_h while keeping aspect ratio
-    pil_img.thumbnail((max_w, max_h), Image.LANCZOS)
-    return ImageTk.PhotoImage(pil_img)
+        pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    pil.thumbnail((max_w, max_h), Image.LANCZOS)
+    return ImageTk.PhotoImage(pil)
 
 
 # ===========================================================================
-#  Main Application Window
+#  Main Application
 # ===========================================================================
 
 class DocumentScannerApp(tk.Tk):
 
     # Brand colours
-    PRIMARY   = "#1a1a2e"   # dark navy
-    SECONDARY = "#16213e"   # slightly lighter navy
-    ACCENT    = "#0f3460"   # blue
-    HIGHLIGHT = "#e94560"   # red-pink
-    TEXT      = "#eaeaea"
-    SUCCESS   = "#4caf50"
-    WARNING   = "#ff9800"
+    BG       = "#0f1117"
+    PANEL    = "#1e2235"
+    SIDEBAR  = "#16213e"
+    ACCENT   = "#0f3460"
+    RED      = "#e94560"
+    TEXT     = "#eaeaea"
+    MUTED    = "#a0aec0"
+    SUCCESS  = "#4caf50"
+    WARNING  = "#f6ad55"
 
     def __init__(self):
         super().__init__()
         self.title("Document Scanner AI — KKR Gen AI Innovations")
-        self.configure(bg=self.PRIMARY)
+        self.configure(bg=self.BG)
+        self.minsize(1200, 780)
         self.resizable(True, True)
-        self.minsize(1100, 700)
 
         # State
-        self._orig_image: np.ndarray | None = None
+        self._orig_image:    np.ndarray | None = None
         self._scanned_image: np.ndarray | None = None
-        self._orig_tk  = None   # keep references (prevent GC)
+        self._ocr_text: str = ""
+        self._orig_tk  = None
         self._scan_tk  = None
 
         self._build_ui()
-        self._center_window()
+        self._center()
 
     # ------------------------------------------------------------------
     # UI construction
     # ------------------------------------------------------------------
 
     def _build_ui(self):
-        # ── Top banner ──────────────────────────────────────────────────
-        banner_frame = tk.Frame(self, bg=self.ACCENT, pady=8)
-        banner_frame.pack(fill="x")
-        tk.Label(
-            banner_frame,
-            text="  📄  KKR Gen AI Innovations — Document Scanner AI",
-            font=("Segoe UI", 14, "bold"),
-            bg=self.ACCENT, fg=self.TEXT,
-        ).pack(side="left", padx=16)
-        tk.Label(
-            banner_frame,
-            text="https://kkrgenaiinnovations.com/  ",
-            font=("Segoe UI", 9),
-            bg=self.ACCENT, fg="#aad4f5",
-        ).pack(side="right", padx=16)
+        # ── Top navbar ─────────────────────────────────────────────────
+        nav = tk.Frame(self, bg=self.ACCENT, pady=9)
+        nav.pack(fill="x")
+        tk.Label(nav, text="  📄  KKR Gen AI Innovations — Document Scanner AI",
+                 font=("Segoe UI", 13, "bold"), bg=self.ACCENT, fg=self.TEXT
+                 ).pack(side="left", padx=16)
+        tk.Label(nav, text="kkrgenaiinnovations.com  ",
+                 font=("Segoe UI", 9), bg=self.ACCENT, fg="#aad4f5"
+                 ).pack(side="right", padx=14)
 
-        # ── Main content ────────────────────────────────────────────────
-        content = tk.Frame(self, bg=self.PRIMARY, padx=12, pady=10)
-        content.pack(fill="both", expand=True)
+        # ── Main content (sidebar + workspace) ─────────────────────────
+        body = tk.Frame(self, bg=self.BG)
+        body.pack(fill="both", expand=True, padx=10, pady=8)
 
-        # Left column: controls
-        left = tk.Frame(content, bg=self.SECONDARY, width=280, padx=14, pady=14)
-        left.pack(side="left", fill="y", padx=(0, 10))
-        left.pack_propagate(False)
-        self._build_controls(left)
+        # Left sidebar
+        sidebar = tk.Frame(body, bg=self.SIDEBAR, width=260)
+        sidebar.pack(side="left", fill="y", padx=(0, 8))
+        sidebar.pack_propagate(False)
+        self._build_sidebar(sidebar)
 
-        # Right column: preview panels
-        right = tk.Frame(content, bg=self.PRIMARY)
-        right.pack(side="left", fill="both", expand=True)
-        self._build_previews(right)
+        # Right workspace
+        workspace = tk.Frame(body, bg=self.BG)
+        workspace.pack(side="left", fill="both", expand=True)
+        self._build_workspace(workspace)
 
-        # ── Status bar ──────────────────────────────────────────────────
-        self._status_var = tk.StringVar(value="Ready. Load an image to begin.")
-        status_bar = tk.Label(
-            self, textvariable=self._status_var,
-            font=("Segoe UI", 9), bg=self.SECONDARY,
-            fg=self.TEXT, anchor="w", padx=12, pady=5,
-        )
-        status_bar.pack(fill="x", side="bottom")
+        # ── Status bar ─────────────────────────────────────────────────
+        self._status_var = tk.StringVar(value="Ready — load an image to begin.")
+        tk.Label(self, textvariable=self._status_var,
+                 font=("Segoe UI", 9), bg=self.PANEL,
+                 fg=self.TEXT, anchor="w", padx=12, pady=5
+                 ).pack(fill="x", side="bottom")
 
-    def _build_controls(self, parent):
-        lbl_style = {"bg": self.SECONDARY, "fg": self.TEXT, "font": ("Segoe UI", 10)}
-        sep_style = {"bg": self.ACCENT, "height": 1}
+    # ── Sidebar ────────────────────────────────────────────────────────
 
-        # Section: Load
-        tk.Label(parent, text="1.  LOAD IMAGE", font=("Segoe UI", 10, "bold"),
-                 bg=self.SECONDARY, fg=self.HIGHLIGHT).pack(anchor="w", pady=(0, 4))
-        tk.Button(
-            parent, text="📂  Browse …",
-            font=("Segoe UI", 10, "bold"),
-            bg=self.HIGHLIGHT, fg="white", relief="flat",
-            activebackground="#c73652", activeforeground="white",
-            padx=10, pady=6, cursor="hand2",
-            command=self._load_image,
-        ).pack(fill="x", pady=(0, 4))
+    def _build_sidebar(self, parent):
+        pad = {"padx": 12, "pady": 4}
+
+        def section(text):
+            tk.Label(parent, text=text,
+                     font=("Segoe UI", 9, "bold"),
+                     bg=self.SIDEBAR, fg=self.RED
+                     ).pack(anchor="w", padx=12, pady=(10, 2))
+            tk.Frame(parent, bg=self.ACCENT, height=1).pack(fill="x", padx=12, pady=(0, 6))
+
+        def btn(parent, text, color, command, pady=4):
+            tk.Button(parent, text=text,
+                      font=("Segoe UI", 9, "bold"),
+                      bg=color, fg="white", relief="flat",
+                      activebackground=color, activeforeground="white",
+                      padx=8, pady=6, cursor="hand2",
+                      command=command
+                      ).pack(fill="x", padx=12, pady=(0, pady))
+
+        # ── 1. LOAD ─────────────────────────────────────────────────────
+        section("1.  LOAD IMAGE")
+        btn(parent, "📂  Browse …", self.RED, self._load_image)
         self._file_lbl = tk.Label(parent, text="No file selected",
-                                  wraplength=230, justify="left",
+                                  wraplength=220, justify="left",
                                   font=("Segoe UI", 8),
-                                  bg=self.SECONDARY, fg=self.TEXT)
-        self._file_lbl.pack(anchor="w", pady=(0, 8))
-        tk.Frame(parent, **sep_style).pack(fill="x", pady=6)
+                                  bg=self.SIDEBAR, fg=self.MUTED)
+        self._file_lbl.pack(anchor="w", padx=12, pady=(0, 2))
 
-        # Section: Scan settings
-        tk.Label(parent, text="2.  SCAN SETTINGS", font=("Segoe UI", 10, "bold"),
-                 bg=self.SECONDARY, fg=self.HIGHLIGHT).pack(anchor="w", pady=(0, 4))
-
-        tk.Label(parent, text="Enhancement Mode:", **lbl_style).pack(anchor="w")
+        # ── 2. SCAN SETTINGS ────────────────────────────────────────────
+        section("2.  SCAN SETTINGS")
+        tk.Label(parent, text="Enhancement Mode",
+                 font=("Segoe UI", 8), bg=self.SIDEBAR, fg=self.MUTED
+                 ).pack(anchor="w", padx=12)
         self._mode_var = tk.StringVar(value="adaptive")
-        mode_box = ttk.Combobox(
-            parent, textvariable=self._mode_var,
-            values=["adaptive", "otsu", "color", "grayscale"],
-            state="readonly", font=("Segoe UI", 10),
-        )
-        mode_box.pack(fill="x", pady=(2, 6))
+        ttk.Combobox(parent, textvariable=self._mode_var,
+                     values=["adaptive", "otsu", "color", "grayscale"],
+                     state="readonly", font=("Segoe UI", 9)
+                     ).pack(fill="x", padx=12, pady=(2, 6))
 
-        self._denoise_var  = tk.BooleanVar(value=True)
-        self._shadow_var   = tk.BooleanVar(value=True)
-        self._sharpen_var  = tk.BooleanVar(value=True)
-
-        for var, text in [
-            (self._denoise_var,  "Reduce noise"),
-            (self._shadow_var,   "Remove shadows"),
-            (self._sharpen_var,  "Sharpen text"),
+        self._denoise_var = tk.BooleanVar(value=True)
+        self._shadow_var  = tk.BooleanVar(value=True)
+        self._sharpen_var = tk.BooleanVar(value=True)
+        for var, label in [
+            (self._denoise_var, "Reduce noise"),
+            (self._shadow_var,  "Remove shadows"),
+            (self._sharpen_var, "Sharpen text"),
         ]:
-            tk.Checkbutton(
-                parent, text=text, variable=var,
-                bg=self.SECONDARY, fg=self.TEXT,
-                selectcolor=self.ACCENT, activebackground=self.SECONDARY,
-                font=("Segoe UI", 9),
-            ).pack(anchor="w")
+            tk.Checkbutton(parent, text=label, variable=var,
+                           bg=self.SIDEBAR, fg=self.TEXT,
+                           selectcolor=self.ACCENT,
+                           activebackground=self.SIDEBAR,
+                           font=("Segoe UI", 9)
+                           ).pack(anchor="w", padx=12)
 
-        tk.Frame(parent, **sep_style).pack(fill="x", pady=8)
+        # ── 3. SCAN ─────────────────────────────────────────────────────
+        section("3.  SCAN")
+        btn(parent, "▶  Scan Document", self.SUCCESS, self._scan_threaded, pady=2)
+        self._corners_lbl = tk.Label(parent, text="",
+                                     font=("Segoe UI", 8),
+                                     bg=self.SIDEBAR, fg=self.MUTED)
+        self._corners_lbl.pack(anchor="w", padx=12, pady=(0, 4))
 
-        # Section: Scan
-        tk.Label(parent, text="3.  SCAN", font=("Segoe UI", 10, "bold"),
-                 bg=self.SECONDARY, fg=self.HIGHLIGHT).pack(anchor="w", pady=(0, 4))
-        tk.Button(
-            parent, text="▶  Scan Document",
-            font=("Segoe UI", 11, "bold"),
-            bg=self.SUCCESS, fg="white", relief="flat",
-            activebackground="#388e3c", activeforeground="white",
-            padx=10, pady=8, cursor="hand2",
-            command=self._scan_threaded,
-        ).pack(fill="x", pady=(0, 8))
-        tk.Frame(parent, **sep_style).pack(fill="x", pady=6)
+        # ── 4. OCR ──────────────────────────────────────────────────────
+        section("4.  EXTRACT TEXT (OCR)")
+        btn(parent, "🔍  Extract Text (OCR)", "#7b2ff7", self._ocr_threaded)
+        btn(parent, "📋  Copy Text to Clipboard", self.ACCENT, self._copy_text, pady=8)
 
-        # Section: Save
-        tk.Label(parent, text="4.  SAVE RESULT", font=("Segoe UI", 10, "bold"),
-                 bg=self.SECONDARY, fg=self.HIGHLIGHT).pack(anchor="w", pady=(0, 4))
-        tk.Button(
-            parent, text="💾  Save as JPG",
-            font=("Segoe UI", 10),
-            bg=self.ACCENT, fg="white", relief="flat",
-            activebackground="#0a2540", activeforeground="white",
-            padx=10, pady=6, cursor="hand2",
-            command=lambda: self._save("jpg"),
-        ).pack(fill="x", pady=(0, 4))
-        tk.Button(
-            parent, text="📄  Save as PDF",
-            font=("Segoe UI", 10),
-            bg=self.ACCENT, fg="white", relief="flat",
-            activebackground="#0a2540", activeforeground="white",
-            padx=10, pady=6, cursor="hand2",
-            command=lambda: self._save("pdf"),
-        ).pack(fill="x", pady=(0, 8))
-        tk.Frame(parent, **sep_style).pack(fill="x", pady=6)
+        # ── 5. SAVE ─────────────────────────────────────────────────────
+        section("5.  SAVE RESULT")
+        btn(parent, "💾  Save as JPG",  self.ACCENT,   lambda: self._save("jpg"))
+        btn(parent, "📄  Save as PDF",  "#c73652",     lambda: self._save("pdf"))
+        btn(parent, "📝  Save as Word", "#1565c0",     lambda: self._save("word"), pady=8)
 
-        # Footer links
-        tk.Label(parent, text="KKR Gen AI Innovations",
-                 font=("Segoe UI", 8, "bold"),
-                 bg=self.SECONDARY, fg=self.HIGHLIGHT).pack(anchor="w", pady=(4, 0))
-        tk.Label(parent, text="kkrgenaiinnovations.com",
-                 font=("Segoe UI", 8), bg=self.SECONDARY, fg="#aad4f5").pack(anchor="w")
-        tk.Label(parent, text="WA: +1 470-861-6312",
-                 font=("Segoe UI", 8), bg=self.SECONDARY, fg="#aad4f5").pack(anchor="w")
+        # ── Branding footer ─────────────────────────────────────────────
+        tk.Frame(parent, bg=self.ACCENT, height=1).pack(fill="x", padx=12, pady=(8, 4))
+        for line in [
+            ("KKR Gen AI Innovations", ("Segoe UI", 8, "bold"), self.RED),
+            ("kkrgenaiinnovations.com", ("Segoe UI", 8), "#aad4f5"),
+            ("WA: +1 470-861-6312",    ("Segoe UI", 8), "#aad4f5"),
+        ]:
+            tk.Label(parent, text=line[0], font=line[1],
+                     bg=self.SIDEBAR, fg=line[2]
+                     ).pack(anchor="w", padx=12, pady=1)
 
-    def _build_previews(self, parent):
-        row1 = tk.Frame(parent, bg=self.PRIMARY)
-        row1.pack(fill="both", expand=True)
+    # ── Workspace ──────────────────────────────────────────────────────
 
-        # Original preview
-        orig_frame = tk.LabelFrame(
-            row1, text="  Original Image  ",
-            font=("Segoe UI", 10, "bold"),
-            bg=self.PRIMARY, fg=self.TEXT,
-            bd=2, relief="ridge",
-        )
-        orig_frame.pack(side="left", fill="both", expand=True, padx=(0, 6))
-        self._orig_panel = tk.Label(orig_frame, bg=self.SECONDARY,
-                                    text="Load an image to preview",
-                                    fg="#888", font=("Segoe UI", 11))
-        self._orig_panel.pack(fill="both", expand=True, padx=4, pady=4)
+    def _build_workspace(self, parent):
+        # Top row: image previews
+        top = tk.Frame(parent, bg=self.BG)
+        top.pack(fill="both", expand=True)
 
-        # Scanned preview
-        scan_frame = tk.LabelFrame(
-            row1, text="  Scanned Output  ",
-            font=("Segoe UI", 10, "bold"),
-            bg=self.PRIMARY, fg=self.TEXT,
-            bd=2, relief="ridge",
-        )
-        scan_frame.pack(side="left", fill="both", expand=True)
-        self._scan_panel = tk.Label(scan_frame, bg=self.SECONDARY,
-                                    text="Scan result will appear here",
-                                    fg="#888", font=("Segoe UI", 11))
-        self._scan_panel.pack(fill="both", expand=True, padx=4, pady=4)
+        for attr, title, placeholder in [
+            ("_orig_panel",  "Original Image",  "Load an image to preview"),
+            ("_scan_panel",  "Scanned Output",  "Scan result will appear here"),
+        ]:
+            frame = tk.LabelFrame(top, text=f"  {title}  ",
+                                  font=("Segoe UI", 10, "bold"),
+                                  bg=self.BG, fg=self.TEXT, bd=2, relief="ridge")
+            frame.pack(side="left", fill="both", expand=True, padx=(0, 6) if attr == "_orig_panel" else 0)
+            lbl = tk.Label(frame, text=placeholder,
+                           bg=self.PANEL, fg="#555",
+                           font=("Segoe UI", 10))
+            lbl.pack(fill="both", expand=True, padx=3, pady=3)
+            setattr(self, attr, lbl)
+
+        # Bottom: OCR text area
+        ocr_frame = tk.LabelFrame(parent, text="  Extracted Text (OCR — Selectable & Copyable)  ",
+                                  font=("Segoe UI", 10, "bold"),
+                                  bg=self.BG, fg=self.TEXT, bd=2, relief="ridge")
+        ocr_frame.pack(fill="x", pady=(8, 0), ipady=4)
+
+        scroll = tk.Scrollbar(ocr_frame, orient="vertical")
+        self._ocr_box = tk.Text(ocr_frame,
+                                height=7,
+                                font=("Courier New", 10),
+                                bg="#0d1117", fg="#c9d1d9",
+                                insertbackground=self.TEXT,
+                                selectbackground=self.ACCENT,
+                                relief="flat", padx=10, pady=8,
+                                wrap="word",
+                                yscrollcommand=scroll.set)
+        scroll.config(command=self._ocr_box.yview)
+        scroll.pack(side="right", fill="y")
+        self._ocr_box.pack(fill="both", expand=True, padx=(3, 0), pady=3)
+        self._ocr_box.insert("1.0", "[ OCR text will appear here after you click 'Extract Text (OCR)' ]")
+        self._ocr_box.config(state="disabled")
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -282,23 +274,26 @@ class DocumentScannerApp(tk.Tk):
         if image is None:
             messagebox.showerror("Error", f"Cannot open:\n{path}")
             return
-
-        self._orig_image = image
+        self._orig_image    = image
         self._scanned_image = None
+        self._ocr_text      = ""
         self._file_lbl.config(text=os.path.basename(path))
+        self._corners_lbl.config(text="")
         self._set_status(f"Loaded: {os.path.basename(path)}")
 
-        # Show original preview
         self._orig_tk = cv2_to_tk(image)
         self._orig_panel.config(image=self._orig_tk, text="")
         self._scan_panel.config(image="", text="Press ▶ Scan Document")
+        self._clear_ocr_box("[ OCR text will appear here after scanning and clicking Extract Text ]")
+
+    # ── Scan ────────────────────────────────────────────────────────────
 
     def _scan_threaded(self):
-        """Run scanning in a background thread so the UI stays responsive."""
         if self._orig_image is None:
             messagebox.showwarning("No Image", "Please load an image first.")
             return
         self._set_status("Scanning … please wait")
+        self._scan_panel.config(image="", text="Scanning …")
         threading.Thread(target=self._do_scan, daemon=True).start()
 
     def _do_scan(self):
@@ -308,9 +303,11 @@ class DocumentScannerApp(tk.Tk):
 
             corners = processor.detect_corners(self._orig_image)
             if corners is not None:
-                scanned = processor.four_point_transform(self._orig_image, corners)
+                scanned  = processor.four_point_transform(self._orig_image, corners)
+                detected = True
             else:
-                scanned = self._orig_image.copy()
+                scanned  = self._orig_image.copy()
+                detected = False
 
             enhanced = enhancer.full_enhance(
                 scanned,
@@ -320,16 +317,73 @@ class DocumentScannerApp(tk.Tk):
                 remove_shadow=self._shadow_var.get(),
             )
             self._scanned_image = enhanced
-            # Update UI on main thread
-            self.after(0, self._show_scan_result)
+            self.after(0, lambda d=detected: self._show_scan(d))
         except Exception as exc:
             self.after(0, lambda: messagebox.showerror("Scan Error", str(exc)))
             self.after(0, lambda: self._set_status(f"Error: {exc}"))
 
-    def _show_scan_result(self):
+    def _show_scan(self, corners_detected: bool):
         self._scan_tk = cv2_to_tk(self._scanned_image)
         self._scan_panel.config(image=self._scan_tk, text="")
-        self._set_status("Scan complete!  Save using the buttons on the left.")
+        icon = "✅" if corners_detected else "⚠️"
+        msg  = "Corners detected" if corners_detected else "No boundary found — full image used"
+        self._corners_lbl.config(text=f"{icon} {msg}",
+                                 fg=self.SUCCESS if corners_detected else self.WARNING)
+        self._set_status("Scan complete! Extract text or save using the sidebar buttons.")
+
+    # ── OCR ─────────────────────────────────────────────────────────────
+
+    def _ocr_threaded(self):
+        if self._scanned_image is None:
+            messagebox.showwarning("No Scan", "Please scan a document first.")
+            return
+        self._set_status("Running OCR … please wait")
+        self._clear_ocr_box("Running OCR …")
+        threading.Thread(target=self._do_ocr, daemon=True).start()
+
+    def _do_ocr(self):
+        try:
+            from utils.ocr import OCRProcessor
+            ocr  = OCRProcessor()
+            text = ocr.extract_text(self._scanned_image)
+            self._ocr_text = text
+            self.after(0, lambda: self._show_ocr(text))
+        except (ImportError, RuntimeError) as exc:
+            msg = str(exc)
+            self.after(0, lambda: self._clear_ocr_box(f"⚠️  OCR unavailable:\n\n{msg}"))
+            self.after(0, lambda: self._set_status("OCR unavailable — see text panel for details"))
+        except Exception as exc:
+            self.after(0, lambda: messagebox.showerror("OCR Error", str(exc)))
+            self.after(0, lambda: self._set_status(f"OCR error: {exc}"))
+
+    def _show_ocr(self, text: str):
+        self._ocr_box.config(state="normal")
+        self._ocr_box.delete("1.0", "end")
+        if text:
+            self._ocr_box.insert("1.0", text)
+            self._set_status(f"OCR complete — {len(text.split())} words extracted. Text is now selectable and copyable.")
+        else:
+            self._ocr_box.insert("1.0", "[ No text detected. Try a different enhancement mode (e.g. 'otsu') before scanning. ]")
+            self._set_status("OCR found no text. Try mode 'otsu' for better results.")
+        self._ocr_box.config(state="normal")   # keep editable so user can select/copy
+
+    def _copy_text(self):
+        text = self._ocr_box.get("1.0", "end").strip()
+        if not text or text.startswith("["):
+            messagebox.showinfo("Nothing to Copy", "Run OCR first to extract text.")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self._set_status("OCR text copied to clipboard.")
+
+    def _clear_ocr_box(self, placeholder: str = ""):
+        self._ocr_box.config(state="normal")
+        self._ocr_box.delete("1.0", "end")
+        if placeholder:
+            self._ocr_box.insert("1.0", placeholder)
+        self._ocr_box.config(state="normal")
+
+    # ── Save ────────────────────────────────────────────────────────────
 
     def _save(self, fmt: str):
         if self._scanned_image is None:
@@ -339,17 +393,18 @@ class DocumentScannerApp(tk.Tk):
         if fmt == "jpg":
             path = filedialog.asksaveasfilename(
                 defaultextension=".jpg",
-                filetypes=[("JPEG Image", "*.jpg"), ("PNG Image", "*.png")],
+                filetypes=[("JPEG", "*.jpg"), ("PNG", "*.png")],
                 title="Save Scanned Image",
             )
             if path:
                 cv2.imwrite(path, self._scanned_image)
                 self._set_status(f"Saved: {os.path.basename(path)}")
                 messagebox.showinfo("Saved", f"Image saved:\n{path}")
-        else:
+
+        elif fmt == "pdf":
             path = filedialog.asksaveasfilename(
                 defaultextension=".pdf",
-                filetypes=[("PDF Document", "*.pdf")],
+                filetypes=[("PDF", "*.pdf")],
                 title="Save as PDF",
             )
             if path:
@@ -357,14 +412,44 @@ class DocumentScannerApp(tk.Tk):
                 self._set_status(f"PDF saved: {os.path.basename(path)}")
                 messagebox.showinfo("Saved", f"PDF saved:\n{path}")
 
+        elif fmt == "word":
+            path = filedialog.asksaveasfilename(
+                defaultextension=".docx",
+                filetypes=[("Word Document", "*.docx")],
+                title="Save as Word Document",
+            )
+            if path:
+                # Get current OCR text (may be empty if OCR not run yet)
+                ocr_text = self._ocr_text
+                try:
+                    wc = WordConverter()
+                    wc.save(
+                        image=self._scanned_image,
+                        output_path=path,
+                        ocr_text=ocr_text,
+                        title=Path(path).stem.replace("_", " ").title(),
+                    )
+                    self._set_status(f"Word saved: {os.path.basename(path)}")
+                    tip = "\n\nTip: Run OCR first to include selectable text in the Word file." if not ocr_text else ""
+                    messagebox.showinfo("Saved", f"Word document saved:\n{path}{tip}")
+                except ImportError as exc:
+                    messagebox.showerror(
+                        "Missing package",
+                        f"{exc}\n\nInstall it with:\n  pip install python-docx"
+                    )
+
+    # ------------------------------------------------------------------
+    # Utilities
+    # ------------------------------------------------------------------
+
     def _set_status(self, msg: str):
         self._status_var.set(f"  {msg}")
 
-    def _center_window(self):
+    def _center(self):
         self.update_idletasks()
-        w, h = self.winfo_width(), self.winfo_height()
+        w, h  = self.winfo_width(), self.winfo_height()
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        self.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+        self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
 
 # ===========================================================================

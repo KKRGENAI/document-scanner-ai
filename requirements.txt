@@ -5,6 +5,11 @@
 #  Install everything at once:
 #    pip install -r requirements.txt
 #
+#  Then install Tesseract OCR engine (for the OCR / selectable-text feature):
+#    Windows : https://github.com/UB-Mannheim/tesseract/wiki
+#    Mac     : brew install tesseract
+#    Linux   : sudo apt install tesseract-ocr
+#
 #  Website : https://kkrgenaiinnovations.com/
 # =============================================================================
 
@@ -13,10 +18,14 @@ opencv-python>=4.8.0        # Computer vision: edge detection, warp, threshold
 numpy>=1.24.0               # Array/matrix operations (used by OpenCV)
 
 # ── Image I/O & PDF export ────────────────────────────────────────────────
-Pillow>=10.0.0              # Image loading/saving, PDF generation
+Pillow>=10.0.0              # Image loading/saving + PDF generation
+
+# ── OCR — selectable text extraction ─────────────────────────────────────
+pytesseract>=0.3.10         # Python wrapper for Tesseract OCR engine
+                            # ALSO install the engine itself — see header above
+
+# ── Word (.docx) export ───────────────────────────────────────────────────
+python-docx>=1.1.0          # Create/edit Microsoft Word documents
 
 # ── Web app (Flask mode) ──────────────────────────────────────────────────
 Flask>=3.0.0                # Lightweight web framework
-
-# ── Optional: faster image I/O ────────────────────────────────────────────
-# opencv-contrib-python>=4.8.0   # Uncomment if you need extra OpenCV modules

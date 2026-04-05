@@ -8,5 +8,13 @@
 from .image_processor import DocumentProcessor
 from .enhancer import ImageEnhancer
 from .pdf_converter import PDFConverter
+from .ocr import OCRProcessor
+from .word_converter import WordConverter
 
-__all__ = ["DocumentProcessor", "ImageEnhancer", "PDFConverter"]
+__all__ = [
+    "DocumentProcessor",
+    "ImageEnhancer",
+    "PDFConverter",
+    "OCRProcessor",
+    "WordConverter",
+]
