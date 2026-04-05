@@ -1,0 +1,22 @@
+# =============================================================================
+#  KKR Gen AI Innovations — Document Scanner AI
+#  Python Dependencies
+#
+#  Install everything at once:
+#    pip install -r requirements.txt
+#
+#  Website : https://kkrgenaiinnovations.com/
+# =============================================================================
+
+# ── Core (required for all modes) ─────────────────────────────────────────
+opencv-python>=4.8.0        # Computer vision: edge detection, warp, threshold
+numpy>=1.24.0               # Array/matrix operations (used by OpenCV)
+
+# ── Image I/O & PDF export ────────────────────────────────────────────────
+Pillow>=10.0.0              # Image loading/saving, PDF generation
+
+# ── Web app (Flask mode) ──────────────────────────────────────────────────
+Flask>=3.0.0                # Lightweight web framework
+
+# ── Optional: faster image I/O ────────────────────────────────────────────
+# opencv-contrib-python>=4.8.0   # Uncomment if you need extra OpenCV modules

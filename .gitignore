@@ -1,0 +1,52 @@
+# =============================================================================
+#  KKR Gen AI Innovations — Document Scanner AI  |  .gitignore
+# =============================================================================
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Output folders (generated at runtime)
+output/
+static/uploads/
+static/output/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables / secrets
+.env
+*.env
+
+# Jupyter Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Keep placeholder for output folder
+!output/.gitkeep
+!static/uploads/.gitkeep
+!static/output/.gitkeep

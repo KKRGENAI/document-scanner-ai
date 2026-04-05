@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Document Scanner AI — KKR Gen AI Innovations</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+</head>
+<body>
+
+  <!-- ─── Navbar ──────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <span class="brand">📄 KKR Gen AI — Document Scanner AI</span>
+    <a href="https://kkrgenaiinnovations.com/" target="_blank" class="nav-link">
+      kkrgenaiinnovations.com
+    </a>
+  </nav>
+
+  <!-- ─── Hero ─────────────────────────────────────────────────────────── -->
+  <section class="hero">
+    <h1>Document Scanner AI</h1>
+    <p class="tagline">Empowering Tomorrow — Transform any photo into a clean, professional scan</p>
+  </section>
+
+  <!-- ─── Upload Card ──────────────────────────────────────────────────── -->
+  <main class="container">
+    <div class="card">
+      <h2>Upload Your Document Image</h2>
+      <p class="hint">
+        Supports JPG, PNG, BMP, TIFF, WebP &nbsp;|&nbsp; Max size: 16 MB
+      </p>
+
+      <form id="upload-form" action="/scan" method="post" enctype="multipart/form-data">
+
+        <!-- Drop zone -->
+        <div class="drop-zone" id="drop-zone">
+          <span class="drop-icon">📂</span>
+          <p>Drag & drop your image here<br/>or <label for="file-input" class="browse-link">click to browse</label></p>
+          <input type="file" id="file-input" name="file"
+                 accept=".jpg,.jpeg,.png,.bmp,.tiff,.tif,.webp" required/>
+          <p id="file-name" class="file-name">No file chosen</p>
+        </div>
+
+        <!-- Options -->
+        <div class="options-row">
+          <div class="option-group">
+            <label for="mode">Enhancement Mode</label>
+            <select id="mode" name="mode">
+              <option value="adaptive" selected>Adaptive (Best for photos)</option>
+              <option value="otsu">Otsu (Uniform lighting)</option>
+              <option value="color">Color (Keep colours)</option>
+              <option value="grayscale">Grayscale (Simple)</option>
+            </select>
+          </div>
+          <div class="option-group checkbox-group">
+            <label>
+              <input type="checkbox" name="save_pdf" id="save_pdf"/>
+              Also save as PDF
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-scan" id="scan-btn">
+          ▶ &nbsp;Scan Document
+        </button>
+      </form>
+
+      <!-- Loading spinner (hidden by default) -->
+      <div id="loading" class="loading hidden">
+        <div class="spinner"></div>
+        <p>Scanning … please wait</p>
+      </div>
+    </div>
+
+    <!-- ─── How it works ─────────────────────────────────────────────── -->
+    <div class="card steps-card">
+      <h2>How It Works</h2>
+      <div class="steps">
+        <div class="step">
+          <span class="step-num">1</span>
+          <h3>Edge Detection</h3>
+          <p>Canny algorithm finds the sharp edges of the document boundary.</p>
+        </div>
+        <div class="step">
+          <span class="step-num">2</span>
+          <h3>Corner Detection</h3>
+          <p>The largest 4-sided contour is selected as the document outline.</p>
+        </div>
+        <div class="step">
+          <span class="step-num">3</span>
+          <h3>Perspective Warp</h3>
+          <p>Transforms the skewed document into a perfect bird's-eye view.</p>
+        </div>
+        <div class="step">
+          <span class="step-num">4</span>
+          <h3>Enhancement</h3>
+          <p>Adaptive thresholding + sharpening gives a crisp scanner-like output.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ─── Footer ───────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <p>
+      <strong>KKR Gen AI Innovations</strong> &nbsp;|&nbsp;
+      <a href="https://kkrgenaiinnovations.com/" target="_blank">Website</a> &nbsp;|&nbsp;
+      <a href="https://x.com/kkr_genai_" target="_blank">Twitter</a> &nbsp;|&nbsp;
+      <a href="https://www.facebook.com/kkrgenaiinnovations" target="_blank">Facebook</a> &nbsp;|&nbsp;
+      <a href="https://www.instagram.com/kkrgenaiinnovations/" target="_blank">Instagram</a> &nbsp;|&nbsp;
+      <a href="https://www.linkedin.com/company/kkr-genai-innovations/" target="_blank">LinkedIn</a> &nbsp;|&nbsp;
+      WhatsApp: <a href="https://wa.me/14708616312">+1 470-861-6312</a>
+    </p>
+    <p class="footer-copy">© 2025 KKR Gen AI Innovations. All rights reserved. Empowering Tomorrow.</p>
+  </footer>
+
+  <script>
+    // ── Drag-and-drop + file name display ──────────────────────────────
+    const input   = document.getElementById("file-input");
+    const zone    = document.getElementById("drop-zone");
+    const nameLbl = document.getElementById("file-name");
+    const form    = document.getElementById("upload-form");
+    const loading = document.getElementById("loading");
+    const scanBtn = document.getElementById("scan-btn");
+
+    input.addEventListener("change", () => {
+      nameLbl.textContent = input.files[0]?.name || "No file chosen";
+    });
+
+    zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("drag-over"); });
+    zone.addEventListener("dragleave", ()  => zone.classList.remove("drag-over"));
+    zone.addEventListener("drop", e => {
+      e.preventDefault();
+      zone.classList.remove("drag-over");
+      if (e.dataTransfer.files.length) {
+        input.files = e.dataTransfer.files;
+        nameLbl.textContent = input.files[0].name;
+      }
+    });
+
+    form.addEventListener("submit", () => {
+      loading.classList.remove("hidden");
+      scanBtn.disabled = true;
+      scanBtn.textContent = "Scanning …";
+    });
+  </script>
+</body>
+</html>

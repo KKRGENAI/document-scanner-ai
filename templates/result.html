@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Scan Result — KKR Gen AI Innovations</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+</head>
+<body>
+
+  <!-- ─── Navbar ──────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <span class="brand">📄 KKR Gen AI — Document Scanner AI</span>
+    <a href="https://kkrgenaiinnovations.com/" target="_blank" class="nav-link">
+      kkrgenaiinnovations.com
+    </a>
+  </nav>
+
+  <!-- ─── Result Section ───────────────────────────────────────────────── -->
+  <main class="container">
+    <div class="card">
+      <h2>✅ Scan Complete!</h2>
+
+      <!-- Stats row -->
+      <div class="stats-row">
+        <div class="stat">
+          <span class="stat-label">Enhancement Mode</span>
+          <span class="stat-value">{{ mode | title }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Corners Detected</span>
+          <span class="stat-value {{ 'good' if corners_detected else 'warn' }}">
+            {{ "Yes ✅" if corners_detected else "No ⚠️ (full image used)" }}
+          </span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Original Size</span>
+          <span class="stat-value">{{ orig_size }} px</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Output Size</span>
+          <span class="stat-value">{{ scan_size }} px</span>
+        </div>
+      </div>
+
+      <!-- Side-by-side comparison -->
+      <div class="compare-row">
+        <div class="compare-panel">
+          <h3>Original</h3>
+          <img src="data:image/jpeg;base64,{{ orig_b64 }}" alt="Original Image" class="preview-img"/>
+        </div>
+        <div class="compare-arrow">→</div>
+        <div class="compare-panel">
+          <h3>Scanned Output</h3>
+          <img src="data:image/jpeg;base64,{{ result_b64 }}" alt="Scanned Image" class="preview-img"/>
+        </div>
+      </div>
+
+      <!-- Download buttons -->
+      <div class="download-row">
+        <a href="/download/{{ out_name }}" class="btn-download btn-jpg">
+          💾 Download JPG
+        </a>
+        {% if pdf_name %}
+        <a href="/download/{{ pdf_name }}" class="btn-download btn-pdf">
+          📄 Download PDF
+        </a>
+        {% endif %}
+        <a href="/" class="btn-download btn-back">
+          ← Scan Another
+        </a>
+      </div>
+    </div>
+  </main>
+
+  <!-- ─── Footer ───────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <p>
+      <strong>KKR Gen AI Innovations</strong> &nbsp;|&nbsp;
+      <a href="https://kkrgenaiinnovations.com/" target="_blank">Website</a> &nbsp;|&nbsp;
+      <a href="https://x.com/kkr_genai_" target="_blank">Twitter</a> &nbsp;|&nbsp;
+      <a href="https://www.facebook.com/kkrgenaiinnovations" target="_blank">Facebook</a> &nbsp;|&nbsp;
+      <a href="https://www.instagram.com/kkrgenaiinnovations/" target="_blank">Instagram</a> &nbsp;|&nbsp;
+      <a href="https://www.linkedin.com/company/kkr-genai-innovations/" target="_blank">LinkedIn</a> &nbsp;|&nbsp;
+      WhatsApp: <a href="https://wa.me/14708616312">+1 470-861-6312</a>
+    </p>
+    <p class="footer-copy">© 2025 KKR Gen AI Innovations. All rights reserved. Empowering Tomorrow.</p>
+  </footer>
+
+</body>
+</html>
