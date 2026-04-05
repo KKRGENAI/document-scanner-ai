@@ -155,7 +155,8 @@ class DocumentScannerApp(tk.Tk):
         ).pack(fill="x", pady=(0, 4))
         self._file_lbl = tk.Label(parent, text="No file selected",
                                   wraplength=230, justify="left",
-                                  font=("Segoe UI", 8), **lbl_style)
+                                  font=("Segoe UI", 8),
+                                  bg=self.SECONDARY, fg=self.TEXT)
         self._file_lbl.pack(anchor="w", pady=(0, 8))
         tk.Frame(parent, **sep_style).pack(fill="x", pady=6)
 
