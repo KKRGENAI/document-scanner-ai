@@ -82,7 +82,7 @@ class DocumentProcessor:
         #   threshold2=200 – strong edges above this are always kept
         edges = cv2.Canny(blurred, 75, 200)
 
-        # Optional: dilate edges to close small gaps
+        # Dilate edges to close small gaps in the document boundary
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         edges = cv2.dilate(edges, kernel, iterations=1)
 
@@ -90,11 +90,22 @@ class DocumentProcessor:
         contours, _ = cv2.findContours(
             edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
         )
-        # Sort contours by area, largest first
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]
+        # Sort contours by area, largest first — keep top 10 candidates
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
+
+        # The document must cover at least 15 % of the working image area.
+        # This rejects small inner rectangles (e.g. text highlights, stamps)
+        # that often have crisper edges than the page border itself.
+        img_area    = resized.shape[0] * resized.shape[1]
+        min_area    = 0.15 * img_area
 
         doc_contour = None
         for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < min_area:
+                # All remaining contours will be even smaller — stop early
+                break
+
             # Approximate the contour to a polygon
             perimeter = cv2.arcLength(contour, True)
             approx = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
@@ -105,7 +116,7 @@ class DocumentProcessor:
                 break
 
         if doc_contour is None:
-            return None  # No document boundary found
+            return None  # No large-enough document boundary found
 
         # --- Step 6 : Scale corners back to original resolution ----------
         corners = doc_contour.reshape(4, 2).astype(np.float32)

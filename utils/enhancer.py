@@ -114,8 +114,8 @@ class ImageEnhancer:
             maxValue=255,
             adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             thresholdType=cv2.THRESH_BINARY,
-            blockSize=11,
-            C=10,
+            blockSize=21,
+            C=12,
         )
         return result
 
@@ -135,18 +135,18 @@ class ImageEnhancer:
     @staticmethod
     def sharpen(image: np.ndarray) -> np.ndarray:
         """
-        Sharpen using an Unsharp Mask.
+        Sharpen using a gentle Unsharp Mask (blend method).
 
-        Formula: sharpened = original + (original − blurred) × amount
-        This makes edges pop and text appear crisp.
+        We blur a copy and then blend:
+            sharpened = original * (1 + amount) − blurred * amount
+        This avoids the halo/outline artefacts that a raw convolution
+        kernel produces on already-sharp digital images or dark text.
+
+        amount=0.6 is noticeably crisper without over-sharpening.
         """
-        # A strong sharpening kernel
-        kernel = np.array([
-            [ 0, -1,  0],
-            [-1,  5, -1],
-            [ 0, -1,  0],
-        ], dtype=np.float32)
-        return cv2.filter2D(image, -1, kernel)
+        amount  = 0.6
+        blurred = cv2.GaussianBlur(image, (0, 0), sigmaX=2)
+        return cv2.addWeighted(image, 1 + amount, blurred, -amount, 0)
 
     @staticmethod
     def denoise(image: np.ndarray) -> np.ndarray:
